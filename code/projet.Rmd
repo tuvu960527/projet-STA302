@@ -35,7 +35,7 @@ library(lme4)
 library(lmerTest)
 ```
 
-## Importation et construction de la base
+## Importation et construction de la base de données
 
 ### Définir le répertoire
 ```{r}
@@ -85,7 +85,7 @@ df$RNFLG <- ifelse(!is.na(df$RNFLGD_1), df$RNFLGD_1, df$RNFLGG_1) # RNFLG droit 
 df$AX <- ifelse(!is.na(df$RNFLGD_1), df$LG_AX_OD, df$LG_AX_OG) # AXIALE droit si RNFLG droit pas NA, AXIALE gauche sinon
 ```
 
-## Création du jeu de données de travail "data"
+## Création du jeu de données "data"
 ```{r}
 df$AGEINT <- df$AGE5
 
@@ -183,7 +183,7 @@ gridExtra::grid.arrange(p1,p2,ncol=2)
 
 Les scores du test d'ISAAC diminuent légèrement au fil du délai.
 
-### Comparaison de la variation des scores d'ISAAC en fonction du sexe: 0 = "Homme" et 1 = "Femme"
+### Comparaison de la variation des scores d'ISAAC dans chaque groupe de variables 
 #### Les mêmes types graphiques comme celui qui est présenté en haut. Par contre, cette fois, on représente l'évolution des scores du test d'ISAAC au fil du délai dans chaque groupe de sexe: 0 = "Homme" et 1 = "Femme".
 ```{r}
 ggplot(data, aes(x=OBSTIME, y=ISAAC, group=ID)) +
@@ -358,6 +358,7 @@ On garde les intéractions avec p<0.25 pour le modèle de multivarié:
 - OBSTIME*APOE4 (0.1091)
 
 ### TEST MULTIVARIE
+
 #### Modèle quadratique sans AX (modèle de base)
 
 ```{r}
