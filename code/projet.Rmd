@@ -264,12 +264,6 @@ c(AIC(mQuad),AIC(mQuad_2REI),AIC(mQuad_2REt),AIC(mQuad_1RE))
 
 Enfin, on garde le modèle quadratique "mQuad_2REt" avec les effets aléatoires sur le délai.
 
-```{r}
-data$DIPNIV <- as.numeric(data$DIPNIV)
-data$APOE4 <- as.numeric(data$APOE4)
-data$SEXE <- as.numeric(data$SEXE)
-```
-
 ### TEST UNIVARIEES
 #### INTERACTIONS AVEC OBSTIME et I(OBSTIME**2)
 ##### Modèle d'évolution quadratique avec RNFLG
@@ -363,12 +357,6 @@ On garde les intéractions avec p<0.25 pour le modèle de multivarié:
 
 - OBSTIME*APOE4 (0.1091)
 
-```{r}
-data$DIPNIV <- as.factor(data$DIPNIV)
-data$APOE4 <- as.factor(data$APOE4)
-data$SEXE <- as.factor(data$SEXE)
-```
-
 ### TEST MULTIVARIE
 #### Modèle quadratique sans AX (modèle de base)
 
@@ -438,9 +426,9 @@ summary(mqa2)
 
 - AIC: 8254.406 et BIC: 8364.633 
 
-- RNFLG: 0.9173
+- RNFLG: 0.9939
 
-- OBSTIME:RNFLG: 0.9939 et I(OBSTIME^2)*RNFLG: 0.5612
+- OBSTIME:RNFLG: 0.6066 et I(OBSTIME^2)*RNFLG: 0.5612
 
 ### Vérifier les hypothèses de normalité et d’hétéroscédasticité des résidus du modèle sans AX
 ```{r}
