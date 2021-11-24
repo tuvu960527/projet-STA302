@@ -1,0 +1,471 @@
+---
+title: "Projet STA302 - Analyse de données longitudinales"
+author:
+- Clement BONNET
+- Lea MORTAIN
+- Uyen Thao VU
+date: "11/24/2021"
+output: html_document
+---
+
+## Chargement de libraires
+```{r}
+# ========== Librairies ========== #
+library(survival)
+library(lattice)
+library(Formula)
+library(ggplot2)
+library(Hmisc)
+library(foreign)
+library(nlme) 
+library(splines) 
+library(MASS)
+library(JM) 
+library(tidyverse) 
+library(tidyr)
+library(magrittr) 
+library(ggkm) 
+library(parallel)
+library(mvtnorm)
+library(lcmm)
+library(nnet)
+library(epiDisplay)
+library(epiR)
+library(lme4)
+library(lmerTest)
+```
+
+## Importation et construction de la base
+
+### Définir le répertoire
+```{r}
+setwd("/home/tuvu/Downloads/projet_STA302/projet")
+```
+
+### Importation du jeu de données
+```{r}
+df <- read.csv("projet.csv", sep=";", dec = ".", na.strings = NA)
+```
+
+### Types de variables
+```{r}
+df$APOE4 <- as.factor(df$APOE4)
+df$DIPNIV0 <- as.factor(df$DIPNIV0)
+df$DEM0_8 <- as.factor(df$DEM0_8)
+df$DC8 <- as.factor(df$DC8)
+df$STATUT5 <- as.factor(df$STATUT5)
+df$STATUT6 <- as.factor(df$STATUT6)
+df$STATUT7 <- as.factor(df$STATUT7)
+df$STATUT8 <- as.factor(df$STATUT8)
+df$AGE5 <- as.numeric(df$AGE5)
+df$AGE6 <- as.numeric(df$AGE6)
+df$AGE7 <- as.numeric(df$AGE7)
+df$AGE8 <- as.numeric(df$AGE8)
+df$AGEDEM8 <- as.numeric(df$AGEDEM8)
+df$AGEFIN8 <- as.numeric(df$AGEFIN8)
+df$MMSTT5 <- as.numeric(df$MMSTT5)
+df$MMSTT6 <- as.numeric(df$MMSTT6)
+df$MMSTT7 <- as.numeric(df$MMSTT7)
+df$MMSTT8 <- as.numeric(df$MMSTT8)
+df$ISA5_60 <- as.numeric(df$ISA5_60)
+df$ISA6_60 <- as.numeric(df$ISA6_60)
+df$ISA7_60 <- as.numeric(df$ISA7_60)
+df$ISA8_60 <- as.numeric(df$ISA8_60)
+df$BENTON5 <- as.numeric(df$BENTON5)
+df$BENTON6 <- as.numeric(df$BENTON6)
+df$BENTON7 <- as.numeric(df$BENTON7)
+df$BENTON8 <- as.numeric(df$BENTON8)
+df$LG_AX_OD <- as.numeric(df$LG_AX_OD)
+df$LG_AX_OG <- as.numeric(df$LG_AX_OG)
+```
+
+## Création de nouvelles variables
+```{r}
+df$RNFLG <- ifelse(!is.na(df$RNFLGD_1), df$RNFLGD_1, df$RNFLGG_1) # RNFLG droit si pas NA, RNGLG gauche sinon
+df$AX <- ifelse(!is.na(df$RNFLGD_1), df$LG_AX_OD, df$LG_AX_OG) # AXIALE droit si RNFLG droit pas NA, AXIALE gauche sinon
+```
+
+## Création du jeu de données de travail "data"
+```{r}
+df$AGEINT <- df$AGE5
+
+df1 <- gather(df, MMSTTX, MMSE, MMSTT5, MMSTT6, MMSTT7, MMSTT8)
+df1 <- df1[order(df1$ID, df1$MMSTTX), ]
+
+df2 <- gather(df, ISAX_60, ISAAC, ISA5_60, ISA6_60, ISA7_60, ISA8_60)
+df2 <- df2[order(df2$ID, df2$ISAX_60), ]
+
+df3 <- gather(df, BENTONX, BENTON, BENTON5, BENTON6, BENTON7, BENTON8)
+df3 <- df3[order(df3$ID, df3$BENTONX), ]
+
+df$STATUT5 <- as.character(df$STATUT5)
+df$STATUT6 <- as.character(df$STATUT6)
+df$STATUT7 <- as.character(df$STATUT7)
+df$STATUT8 <- as.character(df$STATUT8)
+
+df4 <- gather(df, STATUTX, STATUT, STATUT5, STATUT6, STATUT7, STATUT8)
+df4 <- df4[order(df4$ID, df4$STATUTX), ]
+df4$STATUTX <- as.factor(df4$STATUTX)
+df4$STATUT <- as.factor(df4$STATUT)
+
+df5 <- gather(df, AGEX, AGE, AGE5, AGE6, AGE7, AGE8)
+df5 <- df5[order(df5$ID, df5$AGEX), ]
+
+df6 <- cbind(df1, df2[c("ISAX_60", "ISAAC")])
+df7 <- cbind(df6, df3[c("BENTONX", "BENTON")])
+df8 <- cbind(df7, df4[c("STATUTX", "STATUT")])
+df9 <- cbind(df8, df5[c("AGEX", "AGE")])
+
+df9$DIPNIV <- df9$DIPNIV0
+
+df9$DIPNIV <- as.character(df9$DIPNIV)
+
+df9$DIPNIV[df9$DIPNIV == "1" | df9$DIPNIV == "2"] <- "0"
+df9$DIPNIV[df9$DIPNIV == "3" | df9$DIPNIV == "4"] <- "1"
+df9$DIPNIV[df9$DIPNIV == "5"] <- "2"
+df9$DIPNIV <- as.factor(df9$DIPNIV)
+
+df9$SEXE[df9$SEXE == "1"] <- "0"
+df9$SEXE[df9$SEXE == "2"] <- "1"
+df9$SEXE <- as.factor(df9$SEXE)
+
+data <- df9[,c("ID", "SEXE", "DIPNIV", "AGEX", "AGE", "AGEINT", "AGEDEM8", "AGEFIN8", "DEM0_8", "DC8", "APOE4", "RNFLG", "RNFLGD_1", "RNFLGG_1", "AX", "MMSTTX", "MMSE", "ISAX_60", "ISAAC", "BENTONX", "BENTON", "STATUTX", "STATUT")]
+
+# Supprimer les objets inutiles de l'environnement R
+rm(df1, df2, df3, df4, df5, df6, df7, df8, df9)
+
+# Création de la variable de délai
+data$OBSTIME <- (data$AGE - data$AGEINT)/10
+
+# Création de la variable de AGE_MEAN
+data$AGE_MEAN <- (data$AGEINT-mean(data$AGE, na.rm=TRUE))/10
+```
+
+## Vérification de données manquantes
+```{r}
+sapply(data, function(x) sum(is.na(x)))
+sum(is.na(data))
+```
+
+## Analyse descriptive
+```{r}
+summary(data)
+```
+Nombre de participants
+```{r}
+df$ID %>% unique() %>% length()
+```
+### Vérification de distribution des scores du test d'ISAAC
+```{r}
+hist(data$ISAAC) # ISAAC suit bien la loi normale
+```
+
+Distribution des scores du test d'ISAAC suit bien la loi normale -> pas besoin de transformation de données
+
+## Graphiques
+### Variation du score du test d'ISAAC dans l'échantillon de l'étude
+Représentation graphique de la tendance globale d'évolution des scores d'ISAAC au fil du délai
+```{r}
+p1 = ggplot(data, aes(x = OBSTIME, y = ISAAC, group = ID)) +
+  geom_line(aes(color=ID))+
+  geom_point()+
+  scale_x_continuous("Délai", breaks=seq(0, 14, 1)) +
+  ggtitle("Scores d'ISAAC par individus")
+
+p2 = ggplot(data, aes(x = OBSTIME, y = ISAAC)) +
+  geom_smooth(method = 'loess')+
+  geom_point()+
+  scale_x_continuous("Délai", breaks=seq(0, 14, 1)) +
+  ggtitle("Tendance globale d'évolution des scores d'ISAAC")
+
+gridExtra::grid.arrange(p1,p2,ncol=2)
+```
+
+Les scores du test d'ISAAC diminuent légèrement au fil du délai.
+
+### Comparaison de la variation des scores d'ISAAC en fonction du sexe: 0 = "Homme" et 1 = "Femme"
+#### Les mêmes types graphiques comme celui qui est présenté en haut. Par contre, cette fois, on représente l'évolution des scores du test d'ISAAC au fil du délai dans chaque groupe de sexe: 0 = "Homme" et 1 = "Femme".
+```{r}
+ggplot(data, aes(x=OBSTIME, y=ISAAC, group=ID)) +
+  geom_line(aes(color=ID))+
+  geom_point(aes(color=ID))+
+  facet_grid(. ~ SEXE)
+
+ggplot(data, aes(x=OBSTIME, y=ISAAC)) +
+  geom_smooth(method = 'loess')+
+  geom_point()+
+  facet_grid(. ~ SEXE)
+```
+
+#### Evolution des scores du test d'ISAAC au fil du délai dans chaque groupe de niveau d'éducation
+```{r}
+ggplot(data, aes(x=OBSTIME, y=ISAAC, group=ID)) +
+  geom_line(aes(color=ID))+
+  geom_point(aes(color=ID))+
+  facet_grid(. ~ DIPNIV)
+
+ggplot(data, aes(x=OBSTIME, y=ISAAC)) +
+  geom_smooth(method = 'loess')+
+  geom_point()+
+  facet_grid(. ~ DIPNIV)
+```
+
+#### Evolution des scores du test d'ISAAC au fil du délai dans chaque groupe d'allèle APOE4
+```{r}
+ggplot(data, aes(x=OBSTIME, y=ISAAC, group=ID)) +
+  geom_line(aes(color=ID))+
+  geom_point(aes(color=ID))+
+  facet_grid(. ~ APOE4)
+
+ggplot(data, aes(x=OBSTIME, y=ISAAC)) +
+  geom_smooth(method = 'loess')+
+  geom_point()+
+  facet_grid(. ~ APOE4)
+```
+
+Les graphiques ont montré qu'il y a une légère diminution des scores du test d'ISAAC au fil du délai dans chaque groupe étudié. Cependant, quand on observe attentivement les courbes qui représentent la tendance d'évolution de scores d'ISAAC au cours du temps, on voit que ces courbes ne sont pas très linéaires. Pour être précise, on suppose que l'évolution est quadratique.
+
+Ensuite, pour être sûr, on teste plusieurs modèles (linéaire et quadratique) pour choisir le meilleur modèle en utilisant la valeur d'AIC obtenue.
+
+```{r}
+mLin <- lme(fixed = ISAAC ~ OBSTIME,
+            data = data, random = ~ OBSTIME| ID, method="ML",na.action=na.omit)
+
+mQuad <- lme(fixed = ISAAC ~ OBSTIME + I(OBSTIME**2),
+            data = data, random = ~ OBSTIME + I(OBSTIME**2)| ID, method="ML", na.action=na.omit, control = lmeControl(opt = 'optim'))
+
+c(AIC(mLin),AIC(mQuad)) 
+anova(mLin, mQuad) 
+```
+
+La différence entre deux modèles n'est pas significative mais comme la valeur d'AIC du modèle quadratique est plus petite que celle du modèle linéaire et les courbes graphiques ne sont pas complètement droites, on décide donc de garder le modèle quadratique pour la suite d'analyses.
+
+#### Modèle quadratique avec effets aléatoires sur int et delai**2
+```{r}
+mQuad_2REI <- lme(fixed = ISAAC ~ I(OBSTIME**2) + OBSTIME,
+                    data = data, random = ~ I(OBSTIME**2)| ID, method="ML", na.action=na.omit)
+```
+
+#### Modèle quadratique avec effets aléatoires sur int et delai
+```{r}
+mQuad_2REt <- lme(fixed = ISAAC ~ I(OBSTIME**2) + OBSTIME,
+                  data = data, random = ~ OBSTIME| ID, method="ML", na.action=na.omit)
+```
+
+#### Modèle quadratique avec effets aléatoires sur int
+```{r}
+mQuad_1RE <- lme(fixed = ISAAC ~ I(OBSTIME**2) + OBSTIME,
+                 data = data, random = ~ 1| ID, method="ML", na.action=na.omit)
+```
+
+```{r}
+c(AIC(mQuad),AIC(mQuad_2REI),AIC(mQuad_2REt),AIC(mQuad_1RE))
+```
+
+Enfin, on garde le modèle quadratique "mQuad_2REt" avec les effets aléatoires sur le délai.
+
+```{r}
+data$DIPNIV <- as.numeric(data$DIPNIV)
+data$APOE4 <- as.numeric(data$APOE4)
+data$SEXE <- as.numeric(data$SEXE)
+```
+
+### TEST UNIVARIEES
+#### INTERACTIONS AVEC OBSTIME et I(OBSTIME**2)
+##### Modèle d'évolution quadratique avec RNFLG
+
+```{r}
+mRNFLG1 <- lme(fixed = ISAAC ~ I(OBSTIME**2) + OBSTIME + OBSTIME*RNFLG,
+              data = data,
+              random = ~ OBSTIME| ID ,method="ML",na.action=na.omit )
+summary(mRNFLG1)
+
+mRNFLG <- lme(fixed = ISAAC ~ I(OBSTIME**2) + OBSTIME + I(OBSTIME**2)*RNFLG,
+              data = data,
+              random = ~ OBSTIME| ID ,method="ML",na.action=na.omit )
+summary(mRNFLG)
+```
+
+##### Modèle d'évolution quadratique avec age initial
+```{r}
+mA1 <- lme(fixed = ISAAC ~ I(OBSTIME**2) + OBSTIME + OBSTIME*AGE_MEAN,
+          data = data,
+          random = ~ OBSTIME| ID ,method="ML",na.action=na.omit )
+summary(mA1)
+
+mA <- lme(fixed = ISAAC ~ I(OBSTIME**2) + OBSTIME + I(OBSTIME**2)*AGE_MEAN,
+          data = data,
+          random = ~ OBSTIME| ID ,method="ML",na.action=na.omit )
+summary(mA)
+```
+##### Modèle d'évolution quadratique avec niveau d'éducation
+```{r}
+mD1 <- lme(fixed = ISAAC ~ I(OBSTIME**2) + OBSTIME + OBSTIME*DIPNIV,
+          data = data,
+          random = ~ OBSTIME| ID ,method="ML",na.action=na.omit )
+summary(mD1)
+
+mD <- lme(fixed = ISAAC ~ I(OBSTIME**2) + OBSTIME + I(OBSTIME**2)*DIPNIV,
+          data = data,
+          random = ~ OBSTIME| ID ,method="ML",na.action=na.omit )
+summary(mD)
+```
+##### Modèle d'évolution quadratique avec APOE4
+```{r}
+mAP1 <- lme(fixed = ISAAC ~ I(OBSTIME**2) + OBSTIME + OBSTIME*APOE4,
+           data = data,
+           random = ~ OBSTIME| ID, method="ML",na.action=na.omit)
+summary(mAP1)
+
+mAP <- lme(fixed = ISAAC ~ I(OBSTIME**2) + OBSTIME + I(OBSTIME**2)*APOE4,
+           data = data,
+           random = ~ OBSTIME| ID, method="ML",na.action=na.omit)
+summary(mAP)
+```
+##### Modèle d'évolution quadratique avec SEXE
+```{r}
+mS1 <- lme(fixed = ISAAC ~ I(OBSTIME**2) + OBSTIME + OBSTIME*SEXE,
+          data = data,
+          random = ~ OBSTIME| ID, method="ML",na.action=na.omit)
+summary(mS1)
+
+mS <- lme(fixed = ISAAC ~ I(OBSTIME**2) + OBSTIME + I(OBSTIME**2)*SEXE,
+          data = data,
+          random = ~ OBSTIME| ID, method="ML",na.action=na.omit)
+summary(mS)
+```
+##### Modèle d'évolution quadratique avec AX
+```{r}
+mAX1 <- lme(fixed = ISAAC ~ I(OBSTIME**2) + OBSTIME + OBSTIME*AX,
+          data = data,
+          random = ~ OBSTIME| ID, method="ML",na.action=na.omit)
+summary(mAX1)
+
+mAX <- lme(fixed = ISAAC ~ I(OBSTIME**2) + OBSTIME + I(OBSTIME**2)*AX,
+          data = data,
+          random = ~ OBSTIME| ID, method="ML",na.action=na.omit)
+summary(mAX)
+```
+
+On garde les intéractions avec p<0.25 pour le modèle de multivarié:
+
+- OBSTIME:RNFLG (0.1967)
+
+- I(OBSTIME^2):RNFLG (0.1531)
+
+- OBSTIME*AGE_MEAN (0.0000)
+
+- I(OBSTIME^2)*AGE_MEAN (0.0000)
+
+- OBSTIME*DIPNIV (0.1493)
+
+- I(OBSTIME^2)*AX (0.1495)
+
+- OBSTIME*APOE4 (0.1091)
+
+```{r}
+data$DIPNIV <- as.factor(data$DIPNIV)
+data$APOE4 <- as.factor(data$APOE4)
+data$SEXE <- as.factor(data$SEXE)
+```
+
+### TEST MULTIVARIE
+#### Modèle quadratique sans AX (modèle de base)
+
+```{r}
+mqs <- lme(fixed = ISAAC ~ I(OBSTIME**2) + OBSTIME + RNFLG + AGE_MEAN + SEXE + APOE4 + DIPNIV + OBSTIME*RNFLG + I(OBSTIME**2)*RNFLG, data = data, random = ~ OBSTIME | ID, method = "ML", na.action = na.omit)
+summary(mqs) 
+```
+- AIC: 12343.3  
+
+- RNFLG: 0.9173
+
+- OBSTIME:RNFLG: 0.8766 et I(OBSTIME^2)*RNFLG: 0.5724
+
+#### Modèle sans AX avec des intéractions très significatives qui ont p-value < 0.05 à part de l'intéraction de RNFLG avec délai
+```{r}
+mqs1 <- lme(fixed = ISAAC ~ I(OBSTIME**2) + OBSTIME + RNFLG + AGE_MEAN + SEXE + APOE4 + DIPNIV + OBSTIME*(RNFLG + AGE_MEAN) + I(OBSTIME**2)*(RNFLG + AGE_MEAN), data = data, random = ~ OBSTIME | ID, method = "ML", na.action = na.omit)
+summary(mqs1) 
+```
+
+- AIC: 12306.86 et BIC: 12398.5 
+
+- RNFLG: 0.8427
+
+- OBSTIME:RNFLG: 0.8766 et I(OBSTIME^2)*RNFLG: 0.5762
+
+#### Modèle sans AX avec des intéractions qui ont p-value < 0.25
+```{r}
+mqs2 <- lme(fixed = ISAAC ~ I(OBSTIME**2) + OBSTIME + RNFLG + AGE_MEAN + SEXE + APOE4 + DIPNIV + OBSTIME*(RNFLG + AGE_MEAN + DIPNIV + APOE4) + I(OBSTIME**2)*(RNFLG + AGE_MEAN), data = data, random = ~ OBSTIME | ID, method = "ML", na.action = na.omit)
+summary(mqs2)
+```
+
+- AIC: 12307.63 et BIC: 12415.43
+
+- RNFLG: 0.8121
+
+- OBSTIME:RNFLG: 0.8491 et I(OBSTIME^2)*RNFLG: 0.5534
+
+#### Modèle avec AX (modèle de base)
+```{r}
+mqa <- lme(fixed = ISAAC ~ I(OBSTIME**2) + OBSTIME + RNFLG + AGE_MEAN + SEXE + APOE4 + DIPNIV + AX + OBSTIME*RNFLG + I(OBSTIME**2)*RNFLG, data = data, random = ~ OBSTIME | ID, method = "ML", na.action = na.omit)
+summary(mqa)
+```
+
+- AIC: 8268.761 et BIC: 8268.761 
+
+- RNFLG: 0.8549
+
+- OBSTIME:RNFLG: 0.8609 et I(OBSTIME^2)*RNFLG: 0.4242
+
+#### Modèle avec AX avec des intéractions très significatives qui ont p-value < 0.05 à part de l'intéraction de RNFLG avec délai
+```{r}
+mqa1 <- lme(fixed = ISAAC ~ I(OBSTIME**2) + OBSTIME + RNFLG + AGE_MEAN + SEXE + APOE4 + DIPNIV + AX + OBSTIME*(RNFLG + AGE_MEAN) + I(OBSTIME**2)*(RNFLG + AGE_MEAN), data = data, random = ~ OBSTIME | ID, method = "ML", na.action = na.omit)
+summary(mqa1) 
+```
+
+- AIC: 8254.39 et BIC: 8344.576 
+
+- RNFLG: 0.9186
+
+- OBSTIME:RNFLG: 0.7592 et I(OBSTIME^2)*RNFLG: 0.4899
+
+#### Modèle avec AX avec des intéractions qui ont p-value < 0.25
+```{r}
+mqa2 <- lme(fixed = ISAAC ~ I(OBSTIME**2) + OBSTIME + RNFLG + AGE_MEAN + SEXE + APOE4 + DIPNIV + OBSTIME*(RNFLG + AGE_MEAN + DIPNIV + APOE4) + I(OBSTIME**2)*(RNFLG + AGE_MEAN + AX), data = data, random = ~ OBSTIME | ID, method = "ML", na.action = na.omit)
+summary(mqa2) 
+```
+
+- AIC: 8254.406 et BIC: 8364.633 
+
+- RNFLG: 0.9173
+
+- OBSTIME:RNFLG: 0.9939 et I(OBSTIME^2)*RNFLG: 0.5612
+
+### Vérifier les hypothèses de normalité et d’hétéroscédasticité des résidus du modèle sans AX
+```{r}
+q1 <- qqnorm(mqs)
+q2 <- qqnorm(mqs1)
+q3 <- qqnorm(mqs2)
+gridExtra::grid.arrange(q1,q2,q3,ncol=3)
+
+pl1 <- plot(mqs)
+pl2 <- plot(mqs1)
+pl3 <- plot(mqs2)
+gridExtra::grid.arrange(pl1,pl2,pl3,ncol=3)
+```
+
+### Vérifier les hypothèses de normalité et d’hétéroscédasticité des résidus du modèle avec AX
+
+```{r}
+qa1 <- qqnorm(mqa)
+qa2 <- qqnorm(mqa1)
+qa3 <- qqnorm(mqa2)
+gridExtra::grid.arrange(qa1,qa2,qa3,ncol=3)
+
+pla1 <- plot(mqa)
+pla2 <- plot(mqa1)
+pla3 <- plot(mqa2)
+gridExtra::grid.arrange(pla1,pla2,pla3,ncol=3)
+```
+
