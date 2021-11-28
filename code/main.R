@@ -19,6 +19,11 @@ library(lcmm)
 library(nnet)
 library(epiDisplay)
 library(epiR)
+library(lme4)
+library(lmerTest)
+library(moments)
+library(ggpubr)
+library(bestNormalize)
 
 # ========== Importation et construction de la base  ========== #
 
@@ -31,7 +36,6 @@ df <- read.csv("projet.csv", sep=";", dec = ".", na.strings = NA)
 
 # ____ Types de variables ____ #
 
-#df$SEXE <- as.factor(df$SEXE)
 df$APOE4 <- as.factor(df$APOE4)
 df$DIPNIV0 <- as.factor(df$DIPNIV0)
 df$DEM0_8 <- as.factor(df$DEM0_8)
@@ -61,22 +65,12 @@ df$BENTON8 <- as.numeric(df$BENTON8)
 df$LG_AX_OD <- as.numeric(df$LG_AX_OD)
 df$LG_AX_OG <- as.numeric(df$LG_AX_OG)
 
-# ____ Cr?ation de nouvelles variables ____ #
+# ____ Création de nouvelles variables ____ #
 
 df$RNFLG <- ifelse(!is.na(df$RNFLGD_1), df$RNFLGD_1, df$RNFLGG_1) # RNFLG droit si pas NA, RNGLG gauche sinon
 df$AX <- ifelse(!is.na(df$RNFLGD_1), df$LG_AX_OD, df$LG_AX_OG) # AXIALE droit si RNFLG droit pas NA, AXIALE gauche sinon
 
-# for (i in c(1:nrow(df))){
-#   if(!is.na(df$RNFLGD_1)){
-#     df$RNFLG <- df$RNFLGD_1
-#     df$AXE <- df$LG_AX_OD
-#   }
-#   else{
-#     df$RNFLG <- df$RNFLGG_1
-#     df$AXE <- df$LG_AX_OG
-#   }
-
-# ____ Cr?ation du jeu de donn?es de travail "base" ____ #
+# ____ Création du jeu de données de travail "base" ____ #
 
 df$AGEINT <- df$AGE5
 
@@ -125,13 +119,17 @@ data <- df9[,c("ID", "SEXE", "DIPNIV", "AGEX", "AGE", "AGEINT", "AGEDEM8", "AGEF
 # Supprimer les objets inutiles de l'environnement R
 rm(df1, df2, df3, df4, df5, df6, df7, df8, df9)
 
-# Cr?ation de la variable de d?lai
+# Création de la variable de délai
 data$OBSTIME <- (data$AGE - data$AGEINT)/10
 
+# Création de la variable de AGE_MEAN
+#data$AGE_MEAN <- (data$AGEINT-mean(data$AGE, na.rm=TRUE))/10
+data$AGE75 <- (data$AGEINT-75)/10
+data$AGE65 <- (data$AGEINT-65)/10
 
-# ========== V?rifications ========== #
+# ========== Vérifications ========== #
 
-# Donnees manquantes dans "data"
+# Données manquantes dans "data"
 sapply(data, function(x) sum(is.na(x)))
 sum(is.na(data))
 
@@ -144,60 +142,204 @@ df$ID %>% unique() %>% length()
 
 str(data)
 
+# Vérification de la distribution de ISAAC
+hist(data$ISAAC) # ISAAC suit bien la loi normale
+
 # ========== Graphiques ========== #
 
-# pMMSE <- (ggplot(data)
-#           + geom_line(aes(x = OBSTIME, y = MMSE, group = ID), color="grey30", alpha = 0.8)
-#           + stat_smooth(aes(x = OBSTIME, y = MMSE), method = "loess", size = 0.75)
-#           + theme_bw()
-#           + xlab("Temps depuis l'entrée dans l'étude (en dizaines d'années)")
-#           + ylab("MMSE")
-# )
-# pMMSE
+p1 = ggplot(data, aes(x = OBSTIME, y = ISAAC, group = ID)) +
+  geom_line(aes(color=ID))+
+  geom_point()+
+  scale_x_continuous("OBSTIME", breaks=seq(0, 14, 1)) +
+  ggtitle("ISAAC scores by Indivisuals")
 
-pISAAC <- (ggplot(data)
-           + geom_line(aes(x = OBSTIME, y = ISAAC, group = ID), color="grey30", alpha = 0.8)
-           + stat_smooth(aes(x = OBSTIME, y = ISAAC), method = "loess", size = 0.75)
-           + theme_bw()
-           + xlab("Temps depuis l'entrée dans l'étude (en dizaines d'années)")
-           + ylab("ISAAC")
-)
-pISAAC
+p2 = ggplot(data, aes(x = OBSTIME, y = ISAAC)) +
+  geom_smooth(method = 'loess')+
+  geom_point()+
+  scale_x_continuous("OBSTIME", breaks=seq(0, 14, 1)) +
+  ggtitle("Overall ISAAC scores Trend")
 
-# pBENTON <- (ggplot(data)
-#             + geom_line(aes(x = OBSTIME, y = BENTON, group = ID), color="grey30", alpha = 0.8)
-#             + stat_smooth(aes(x = OBSTIME, y = BENTON), method = "loess", size = 0.75)
-#             + theme_bw()
-#             + xlab("Temps depuis l'entrée dans l'étude (en dizaines d'années)")
-#             + ylab("BENTON")
-# )
-# pBENTON
+gridExtra::grid.arrange(p1,p2,ncol=2)
+
+ggplot(data, aes(x=OBSTIME, y=ISAAC, group=ID)) +
+  geom_line(aes(color=ID))+
+  geom_point(aes(color=ID))+
+  facet_grid(. ~ SEXE)
+
+ggplot(data, aes(x=OBSTIME, y=ISAAC)) +
+  geom_smooth(method = 'loess')+
+  geom_point()+
+  facet_grid(. ~ SEXE)
+
+ggplot(data, aes(x=OBSTIME, y=ISAAC, group=ID)) +
+  geom_line(aes(color=ID))+
+  geom_point(aes(color=ID))+
+  facet_grid(. ~ APOE4)
+
+ggplot(data, aes(x=OBSTIME, y=ISAAC)) +
+  geom_smooth(method = 'loess')+
+  geom_point()+
+  facet_grid(. ~ APOE4)
+
+ggplot(data, aes(x=OBSTIME, y=ISAAC, group=ID)) +
+  geom_line(aes(color=ID))+
+  geom_point(aes(color=ID))+
+  facet_grid(. ~ DIPNIV)
+
+ggplot(data, aes(x=OBSTIME, y=ISAAC)) +
+  geom_smooth(method = 'loess')+
+  geom_point()+
+  facet_grid(. ~ DIPNIV)
+
+### =========== TEST LA NORMALITE DES SCORES COGNITIFS ============= ###
+hist(data$ISAAC) 
+hist(data$MMSE) 
+hist(data$BENTON)
+
+# ISAAC suit bien la loi normale.
+# Par contre, MMSE et BENTON ne suit pas la loi normale. Alors, il est important de faire la transformation de données pour MMSE et BENTON.
+
+# ======================= Partie 1: Modèles linéaires mixtes ============================= #
+
+######## ============ ETUDE DE LA RELATION ENTRE RNFL ET SCORE ISAAC #######################
+
+# === Comparaison d'AIC entre modèle à intercept aléatoire et modèles à intercept et pente aléatoire === #
+
+# Modèle à intercept aléatoire
+mi1ISAAC <- lme(fixed = ISAAC ~ OBSTIME + RNFLG + AGE75 + SEXE + DIPNIV + APOE4, data = data, random = ~ 1 | ID, method = "ML", na.action = na.omit)  
+summary(mi1ISAAC) # AIC: 12452.91
+
+# Modèle à intercept et pente aléatoires
+mip2ISAAC <- lme(fixed = ISAAC ~ OBSTIME + RNFLG + AGE75 + SEXE + DIPNIV + APOE4, data = data, random = ~ OBSTIME | ID, method = "ML", na.action = na.omit)  
+summary(mip2ISAAC) # AIC: 12344.76
+
+### --- On garde finalement le modèle à intercept et pente aléatoires --- #
+
+### ============ TEST UNIVARIE DES INTERACTIONS ENTRE CHAQUE VARIABLE ET LE DELAI ============== ###
+
+### === RNFLG * OBSTIME === ###
+mu1ISAAC <- lme(fixed = ISAAC ~ OBSTIME + RNFLG + AGE75 + SEXE + DIPNIV + APOE4 + RNFLG*OBSTIME, data = data, random = ~ OBSTIME | ID, method = "ML", na.action = na.omit)  
+summary(mu1ISAAC) 
+
+### === AGE75 * OBSTIME === ###
+mu2ISAAC <- lme(fixed = ISAAC ~ OBSTIME + RNFLG + AGE75 + SEXE + DIPNIV + APOE4 + AGE75*OBSTIME, data = data, random = ~ OBSTIME | ID, method = "ML", na.action = na.omit)  
+summary(mu2ISAAC) 
+
+### === SEXE * OBSTIME === ###
+mu3ISAAC <- lme(fixed = ISAAC ~ OBSTIME + RNFLG + AGE75 + SEXE + DIPNIV + APOE4 + SEXE*OBSTIME, data = data, random = ~ OBSTIME | ID, method = "ML", na.action = na.omit)  
+summary(mu3ISAAC) 
+
+### === DIPNIV * OBSTIME === ###
+mu4ISAAC <- lme(fixed = ISAAC ~ OBSTIME + RNFLG + AGE75 + SEXE + DIPNIV + APOE4 + DIPNIV*OBSTIME, data = data, random = ~ OBSTIME | ID, method = "ML", na.action = na.omit)  
+summary(mu4ISAAC) 
+
+### === APOE4 * OBSTIME === ###
+mu5ISAAC <- lme(fixed = ISAAC ~ OBSTIME + RNFLG + AGE75 + SEXE + DIPNIV + APOE4 + APOE4*OBSTIME, data = data, random = ~ OBSTIME | ID, method = "ML", na.action = na.omit)  
+summary(mu5ISAAC) 
+
+### === MODELE MULTIVARIE === ###
+mfinal_ISAAC <- lme(fixed = ISAAC ~ OBSTIME + RNFLG + AGE75 + SEXE + APOE4 + DIPNIV + OBSTIME*(RNFLG + AGE75 + APOE4), data = data, random = ~ OBSTIME | ID, method = "ML", na.action = na.omit)
+summary(mfinal_ISAAC)
+
+####### ====== VALIDATION DU MODELE ======== #######
+q1ISAAC <- qqnorm(mfinal_ISAAC)
+pl1ISAAC <- plot(mfinal_ISAAC)
+gridExtra::grid.arrange(q1ISAAC,pl1ISAAC,ncol=2)
+
+# -------------------- TRANSFORMATION DE SCORE BENTON ------------------------ #
+
+## racine carrée pour biais modéré: sqrt(max(x+1) - x) pour les données asymétriques négatives
+data$BENTONsqrtT <- sqrt(max(data$BENTON + 1,na.rm = TRUE) - data$BENTON)
+
+######## ============ ETUDE DE LA RELATION ENTRE RNFL ET SCORE BENTON #######################
+
+# === Comparaison d'AIC entre modèle à intercept aléatoire et modèles à intercept et pente aléatoire === #
+
+# Modèle à intercept aléatoire
+mi1BENTONsqrtT <- lme(fixed = BENTONsqrtT ~ OBSTIME + RNFLG + AGE75 + SEXE + DIPNIV + APOE4, data = data, random = ~ 1 | ID, method = "ML", na.action = na.omit)  
+summary(mi1BENTONsqrtT) # AIC: 1779.72
+
+# Modèle à intercept et pente aléatoires
+mip2BENTONsqrtT <- lme(fixed = BENTONsqrtT ~ OBSTIME + RNFLG + AGE75 + SEXE + DIPNIV + APOE4, data = data, random = ~ OBSTIME | ID, method = "ML", na.action = na.omit)  
+summary(mip2BENTONsqrtT) # AIC: 1780.538
+
+### --- On garde finalement le modèle à intercept et pente aléatoires --- #
+
+### ============ TEST UNIVARIE DES INTERACTIONS ENTRE CHAQUE VARIABLE ET LE DELAI ============== ###
+
+### === RNFLG * OBSTIME === ###
+mu1BENTONsqrtT <- lme(fixed = BENTONsqrtT ~ OBSTIME + RNFLG + AGE75 + SEXE + DIPNIV + APOE4 + RNFLG*OBSTIME, data = data, random = ~ OBSTIME | ID, method = "ML", na.action = na.omit)  
+summary(mu1BENTONsqrtT) # 0.9274
+
+### === AGE75 * OBSTIME === ###
+mu2BENTONsqrtT <- lme(fixed = BENTONsqrtT ~ OBSTIME + RNFLG + AGE75 + SEXE + DIPNIV + APOE4 + AGE75*OBSTIME, data = data, random = ~ OBSTIME | ID, method = "ML", na.action = na.omit)  
+summary(mu2BENTONsqrtT) # 0.0339
+
+### === SEXE * OBSTIME === ###
+mu3BENTONsqrtT <- lme(fixed = BENTONsqrtT ~ OBSTIME + RNFLG + AGE75 + SEXE + DIPNIV + APOE4 + SEXE*OBSTIME, data = data, random = ~ OBSTIME | ID, method = "ML", na.action = na.omit)  
+summary(mu3BENTONsqrtT) # 0.0989
+
+### === DIPNIV * OBSTIME === ###
+mu4BENTONsqrtT <- lme(fixed = BENTONsqrtT ~ OBSTIME + RNFLG + AGE75 + SEXE + DIPNIV + APOE4 + DIPNIV*OBSTIME, data = data, random = ~ OBSTIME | ID, method = "ML", na.action = na.omit)  
+summary(mu4BENTONsqrtT) # 0.4094, 0.9236
+
+### === APOE4 * OBSTIME === ###
+mu5BENTONsqrtT <- lme(fixed = BENTONsqrtT ~ OBSTIME + RNFLG + AGE75 + SEXE + DIPNIV + APOE4 + APOE4*OBSTIME, data = data, random = ~ OBSTIME | ID, method = "ML", na.action = na.omit)  
+summary(mu5BENTONsqrtT) # 0.0290
+
+### === MODELE MULTIVARIE === ###
+mfinal_BENTONsqrtT <- lme(fixed = BENTONsqrtT ~ OBSTIME + RNFLG + AGE75 + SEXE + APOE4 + DIPNIV + OBSTIME*(RNFLG + AGE75 + APOE4), data = data, random = ~ OBSTIME | ID, method = "ML", na.action = na.omit)
+summary(mfinal_BENTONsqrtT)
+
+####### ====== VALIDATION DU MODELE ======== #######
+q1BENTONsqrtT <- qqnorm(mfinal_BENTONsqrtT)
+pl1BENTONsqrtT <- plot(mfinal_BENTONsqrtT)
+gridExtra::grid.arrange(q1BENTONsqrtT,pl1BENTONsqrtT,ncol=2)
 
 
-# ========== Mod?les ========== #
+######## ============ ETUDE DE LA RELATION ENTRE RNFL ET SCORE MMSE #######################
+## log pour une plus grande asymétrie: log10(max(x+1) - x) pour les données asymétriques négatives
+data$logMMSE <- log10(max(data$MMSE + 1,na.rm = TRUE) - data$MMSE)
 
-# Comparaison des AIC
-# c(AIC(m2), AIC(m1))
+# === Comparaison d'AIC entre modèle à intercept aléatoire et modèles à intercept et pente aléatoire === #
 
-# Test de l'ajout de la pente
-# devm1m2 <- 2*logLik(m1) - 2*logLik(m2)
-# pm1m2 <- 0.5*(1-pchisq(devm1m2,df=2)) + 0.5*(1-pchisq(devm1m2,df=1))
-# pm1m2
+# Modèle à intercept aléatoire
+mi1logMMSE <- lme(fixed = logMMSE ~ OBSTIME + RNFLG + AGE75 + SEXE + DIPNIV + APOE4, data = data, random = ~ 1 | ID, method = "ML", na.action = na.omit)  
+summary(mi1logMMSE) # AIC: 125.5908
 
-m1 <- lme(fixed = ISAAC ~ OBSTIME + SEXE + DIPNIV + AGEINT + APOE4 + RNFLG, data = data, random = ~ OBSTIME | ID, method = "ML", na.action = na.omit)
-summary(m1)
+# Modèle à intercept et pente aléatoires
+mip2logMMSE <- lme(fixed = logMMSE ~ OBSTIME + RNFLG + AGE75 + SEXE + DIPNIV + APOE4, data = data, random = ~ OBSTIME | ID, method = "ML", na.action = na.omit)  
+summary(mip2logMMSE) # AIC: 109.391
 
-m2 <- lme(fixed = ISAAC ~ OBSTIME + SEXE, data = data, random = ~ OBSTIME | ID, method = "ML", na.action = na.omit)
-summary(m2)
+### --- On garde finalement le modèle à intercept et pente aléatoires --- #
 
-m3 <- lme(fixed = ISAAC ~ OBSTIME + SEXE + AGEINT + I(RNFLG/10), data = data, random = ~ OBSTIME + I(RNFLG/10)| ID, method = "ML", na.action = na.omit)
-summary(m3)
+### ============ TEST UNIVARIE DES INTERACTIONS ENTRE CHAQUE VARIABLE ET LE DELAI ============== ###
 
-data$AGE_MEAN <- (data$AGE-mean(data$AGE, na.rm=TRUE))/10
+### === RNFLG * OBSTIME === ###
+mu1logMMSE <- lme(fixed = logMMSE ~ OBSTIME + RNFLG + AGE75 + SEXE + DIPNIV + APOE4 + RNFLG*OBSTIME, data = data, random = ~ OBSTIME | ID, method = "ML", na.action = na.omit)  
+summary(mu1logMMSE) # 0.1430
 
-m4 <- lme(fixed = ISAAC ~ SEXE + AGEINT + RNFLG + DIPNIV, data = data, random = ~ AGE_MEAN + I(AGE_MEAN^2) | ID, method = "ML", na.action = na.omit)
-summary(m4)
+### === AGE75 * OBSTIME === ###
+mu2logMMSE <- lme(fixed = logMMSE ~ OBSTIME + RNFLG + AGE75 + SEXE + DIPNIV + APOE4 + AGE75*OBSTIME, data = data, random = ~ OBSTIME | ID, method = "ML", na.action = na.omit)  
+summary(mu2logMMSE) # 0.0058
 
+### === SEXE * OBSTIME === ###
+mu3logMMSE <- lme(fixed = logMMSE ~ OBSTIME + RNFLG + AGE75 + SEXE + DIPNIV + APOE4 + SEXE*OBSTIME, data = data, random = ~ OBSTIME | ID, method = "ML", na.action = na.omit)  
+summary(mu3logMMSE) # 0.6737
 
-#m4 <- lcmm::hlme(fixed = ISAAC ~ SEXE + AGEINT + RNFLG + DIPNIV, data = data, random = ~ AGE_MEAN + I(AGE_MEAN^2), subject = "ID", na.action = na.omit)
-#summary(m4)
+### === DIPNIV * OBSTIME === ###
+mu4logMMSE <- lme(fixed = logMMSE ~ OBSTIME + RNFLG + AGE75 + SEXE + DIPNIV + APOE4 + DIPNIV*OBSTIME, data = data, random = ~ OBSTIME | ID, method = "ML", na.action = na.omit)  
+summary(mu4logMMSE) # 0.6945, 0.4400
+
+### === APOE4 * OBSTIME === ###
+mu5logMMSE <- lme(fixed = logMMSE ~ OBSTIME + RNFLG + AGE75 + SEXE + DIPNIV + APOE4 + APOE4*OBSTIME, data = data, random = ~ OBSTIME | ID, method = "ML", na.action = na.omit)  
+summary(mu5logMMSE) # 0.7483
+
+### === MODELE MULTIVARIE === ###
+mfinal_logMMSE <- lme(fixed = logMMSE ~ OBSTIME + RNFLG + AGE75 + SEXE + APOE4 + DIPNIV + OBSTIME*(RNFLG + AGE75), data = data, random = ~ OBSTIME | ID, method = "ML", na.action = na.omit)
+summary(mfinal_logMMSE)
+
+####### ====== VALIDATION DU MODELE ======== #######
+q1logMMSE <- qqnorm(mfinal_logMMSE)
+pl1logMMSE <- plot(mfinal_logMMSE)
+gridExtra::grid.arrange(q1logMMSE,pl1logMMSE,ncol=2)
